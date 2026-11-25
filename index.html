@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reward-hacking probe</title>
+<meta name="description" content="A logistic probe for reward hacking in Qwen3.8-27B, used as a detector and, through the activation covariance, as a steering vector.">
+<!-- Numbers come from rlp/flag/results/07_overnight.md (sections 1, 2, 7) and from results/mt/v3_sprobe_sub and the unsteered run m1 (section 5). Results page built from the results-site skill. Numbers in prose are typed by hand: update them with the data. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fbf8f3; --panel: #fffdf9; --ink: #2a2318; --ink-2: #5e5245; --ink-3: #8a7d6d;
+  --rule: #e6ddd0; --rule-2: #cfc4b4;
+  --accent: #235fa6; --soft: #eef3f9; --warm: #fbf1e4;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--serif);
+  font-size: 17.5px; line-height: 1.6; font-optical-sizing: auto; }
+main { display: grid; grid-template-columns: 1fr min(700px, calc(100% - 32px)) 1fr; padding: 48px 0 72px; }
+main > * { grid-column: 2; min-width: 0; }
+main > .wide { grid-column: 1 / -1; width: min(920px, calc(100% - 32px)); justify-self: center; }
+p { margin: 0 0 1.05em; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+h1 { font-size: 2.0rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 14px; }
+h2 { font-size: 1.36rem; line-height: 1.3; font-weight: 600; margin: 2.2em 0 0.6em; letter-spacing: -0.01em; }
+h2 .sub, h3 .sub { font-family: var(--sans); font-size: 14px; font-weight: 400; color: var(--ink-3); letter-spacing: 0; margin-left: 6px; }
+h3 { font-size: 1.12rem; line-height: 1.35; font-weight: 600; margin: 1.8em 0 0.5em; }
+ul, ol { padding-left: 1.3em; margin: 0 0 1.05em; } li { margin-bottom: 0.4em; }
+header { padding-bottom: 22px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.crumbs { font-family: var(--sans); font-size: 14px; color: var(--ink-3); margin: 0 0 18px; }
+.crumbs b { color: var(--ink-2); font-weight: 600; }
+.byline { font-family: var(--sans); font-size: 15px; color: var(--ink-2); margin: 0 0 6px; }
+.byline .tag { display: inline-block; border: 1px solid #c9a227; color: #7a6212; background: #fbf3d6; border-radius: 3px;
+  padding: 0 6px; font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase; margin-left: 4px; }
+.headline { font-size: 1.12rem; line-height: 1.5; margin: 16px 0 0; }
+code { font-size: 0.86em; background: #f1ebe1; padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+
+.answer { background: var(--soft); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 12px 18px 4px;
+  margin: 1.4em 0 1.0em; font-size: 16px; }
+.answer p { margin-bottom: 0.7em; }
+.answer-tag { display: block; font-family: var(--sans); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.answer.warn { background: var(--warm); border-left-color: #b0702a; }
+.answer.warn .answer-tag { color: #8a5518; }
+.answer ul { margin: 0 0 0.8em; padding-left: 1.2em; } .answer li { margin-bottom: 0.45em; }
+/* contents: fixed left sidebar on wide screens, collapsible box under the header on narrow ones */
+:root { --toc-w: 250px; }
+.toc { font-family: var(--sans); font-size: 14px; line-height: 1.35; }
+.toc-head { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); margin-bottom: 10px; }
+.toc ul { list-style: none; padding: 0; margin: 0; }
+.toc > ul > li { margin: 0 0 10px; }
+.toc > ul > li > a { font-weight: 600; color: var(--ink); }
+.toc ul ul { margin: 4px 0 0; padding-left: 10px; border-left: 1px solid var(--rule); }
+.toc ul ul li { margin: 3px 0; }
+.toc a { color: var(--ink-2); text-decoration: none; display: block; padding: 1px 0; }
+.toc a:hover { color: var(--accent); }
+.toc > ul > li > a.active, .toc a.active { color: var(--accent); }
+.part { font-family: var(--sans); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); margin: 3.2em 0 -1.2em; padding-top: 14px; border-top: 1px solid var(--rule); }
+h2[id], .part[id], header[id] { scroll-margin-top: 16px; }
+@media (min-width: 1180px) {
+  .page { padding-left: calc(var(--toc-w) + 24px); }
+  .page > .toc { position: fixed; top: 0; left: 0; width: var(--toc-w); height: 100vh; overflow-y: auto; box-sizing: border-box; padding: 48px 18px 32px 28px; border-right: 1px solid var(--rule); background: var(--bg); }
+  .toc-mobile { display: none; }
+}
+@media (max-width: 1179px) {
+  .page > .toc { display: none; }
+  .toc-mobile { margin: 18px 0 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); padding: 8px 14px; }
+  .toc-mobile > summary { font-family: var(--sans); font-weight: 600; font-size: 15px; cursor: pointer; }
+  .toc-mobile .toc { padding: 8px 0 4px; }
+  .toc-mobile .toc-head { display: none; }
+}
+@media print { .page { padding-left: 0; } .page > .toc, .toc-mobile { display: none; } }
+ol.interp li, ul.tight li { margin-bottom: 0.55em; }
+
+figure { margin: 1.8em 0 2.0em; }
+.fig-panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px 8px; }
+.fig-top { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.fig-title { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-family: var(--sans); font-size: 13.5px; color: var(--ink); }
+.legend svg.mk { width: 12px; height: 12px; vertical-align: -1px; margin-right: 3px; overflow: visible; }
+.legend i.band { display: inline-block; width: 16px; height: 11px; background: rgba(138,125,109,0.16); vertical-align: -1px; margin-right: 6px; }
+.legend i.tick { display: inline-block; width: 2px; height: 13px; background: var(--ink); vertical-align: -2px; margin: 0 7px 0 5px; }
+.fig-note { font-family: var(--sans); font-size: 12.5px; line-height: 1.4; color: var(--ink-3); margin-top: 4px; }
+.chart { width: 100%; min-height: 120px; }
+.chart-fallback { font-family: var(--sans); font-size: 14px; color: var(--ink-3); padding: 28px 8px; text-align: center; }
+figcaption { font-family: var(--sans); font-size: 14px; line-height: 1.5; color: var(--ink-2); margin: 10px 2px 0; max-width: 760px; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.2em 0 1.4em; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: 14px; line-height: 1.4;
+  font-variant-numeric: tabular-nums lining-nums; width: 100%; }
+th, td { padding: 6px 9px; border-bottom: 1px solid var(--rule); text-align: right; vertical-align: top; }
+th:first-child, td:first-child { padding-left: 0; text-align: left; }
+th:last-child, td:last-child { padding-right: 0; }
+thead th { font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--ink-3); vertical-align: bottom; }
+table.arms td, table.arms th { text-align: left; }
+table.arms td:first-child { white-space: nowrap; font-weight: 600; }
+table.arms q { font-style: italic; quotes: "“" "”"; font-family: var(--serif); font-size: 14.5px; }
+table.heat td { text-align: center; padding: 5px 4px; border-bottom: 2px solid var(--panel); min-width: 50px; }
+table.heat td:first-child { text-align: left; padding: 5px 8px 5px 0; white-space: nowrap; }
+table.heat th { text-align: center; } table.heat th:first-child { text-align: left; }
+table.heat td.own { outline: 2px solid var(--ink); outline-offset: -2px; }
+table.heat tr.grp td { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); padding-top: 12px; background: none !important; }
+details.tv { margin: 8px 2px 0; font-family: var(--sans); }
+details.tv > summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
+details.tv .table-wrap { margin: 8px 0 4px; }
+details.tv table { font-size: 13px; } details.tv th, details.tv td { padding: 4px 8px; white-space: nowrap; }
+details.more { border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); padding: 8px 14px; margin: 0.7em 0; font-size: 16px; }
+details.more > summary { cursor: pointer; font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); }
+details.more[open] > summary { margin-bottom: 8px; }
+details.more p, details.more li { font-size: 15.5px; }
+details.more table { font-size: 13.5px; }
+.prompt { font-family: var(--sans); font-size: 14px; line-height: 1.5; background: #f6f1e8; border-radius: 4px; padding: 8px 10px; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.prompt b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 600; margin-bottom: 2px; }
+pre.ctx { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.45; background: #f6f1e8; border-radius: 4px;
+  padding: 8px 10px; margin: 4px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre.ctx mark { background: #fbf3d6; color: #7a6212; font-weight: 600; padding: 0 2px; }
+.ctx-head { font-family: var(--sans); font-size: 13px; color: var(--ink-2); font-weight: 600; margin-top: 8px; }
+.ex { border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); padding: 10px 14px; margin: 10px 0 0; }
+.ex-head { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); margin-bottom: 6px; }
+.ex .turn { font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ex .turn .who { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); }
+.over { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; font-weight: 600; }
+.load-error { font-family: var(--sans); font-size: 14px; color: #8a5518; background: var(--warm); border-radius: 4px; padding: 8px 12px; }
+.footer { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin-top: 2.5em; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 4px 22px; font-family: var(--sans); font-size: 15px; margin: 0 0 22px; border-bottom: 1px solid var(--rule); }
+.tabs a { color: var(--ink-2); text-decoration: none; padding: 6px 0 7px; margin-bottom: -1px; border-bottom: 2px solid transparent; }
+.tabs a:hover { color: var(--accent); }
+.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+
+@media (max-width: 600px) {
+  body { font-size: 17px; }
+  main { padding-top: 28px; }
+  h1 { font-size: 1.6rem; }
+  .fig-panel { padding: 12px 10px 6px; }
+  details.more { padding: 8px 10px; }
+}
+@media print {
+  body { background: #fff; font-size: 10.5pt; }
+  .fig-panel { border: 0; padding: 0; }
+  figure, .table-wrap { break-inside: avoid; }
+}
+/* page-specific */
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 1.2em 0 0.4em; font-family: var(--sans); }
+.status div { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px; min-width: 0; }
+.status b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 600; }
+.status span { font-size: 15px; color: var(--ink); }
+.chip { display: inline-block; font-family: var(--sans); font-size: 12px; border-radius: 3px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; }
+.chip.done { background: #e3f3ef; color: #146b5c; } .chip.run { background: #fbf3d6; color: #7a6212; } .chip.pre { background: var(--soft); color: var(--accent); }
+.diagram-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diagram { display: block; min-width: 760px; width: 100%; height: auto; }
+sup.fn a { text-decoration: none; font-family: var(--sans); font-size: 0.72em; padding: 0 1px; }
+ol.notes { font-family: var(--sans); font-size: 14px; line-height: 1.5; color: var(--ink-2); padding-left: 1.6em; }
+ol.notes li { margin-bottom: 0.6em; } ol.notes li:target { background: #fbf3d6; }
+.pred { font-family: var(--sans); font-size: 14px; }
+.pred td:first-child { white-space: normal; }
+.verdict { font-weight: 600; } .verdict.ok { color: #146b5c; } .verdict.no { color: #8a5518; } .verdict.tbd { color: var(--ink-3); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; } .two > * { min-width: 0; }
+@media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+.tldr { margin: 1.4em 0 0.4em; }
+.tldr p.tldr-head { font-weight: 600; margin: 0 0 0.4em; }
+</style>
+</head>
+<body>
+<div class="page">
+<nav class="toc" aria-label="Contents"><div class="toc-head">Contents</div><ul>
+<li><a href="#top" data-target="top">Summary</a></li>
+<li><a href="#why" data-target="why">Why this matters</a></li>
+<li><a href="#method" data-target="method">Method</a></li>
+<li><a href="#part-a" data-target="part-a">Single-turn environments</a><ul>
+<li><a href="#r1" data-target="r1">1. Detection</a></li>
+<li><a href="#r2" data-target="r2">2. Steering</a></li>
+</ul></li>
+<li><a href="#part-b" data-target="part-b">Multi-turn agent rollouts</a><ul>
+<li><a href="#r3" data-target="r3">3. Detection</a></li>
+<li><a href="#r4" data-target="r4">4. Steering inside rollouts</a></li>
+<li><a href="#r5" data-target="r5">5. Running now</a></li>
+</ul></li>
+<li><a href="#where" data-target="where">Where this stands</a></li>
+</ul></nav>
+<main>
+<header id="top">
+<p class="crumbs"><b>Reward-hacking probe</b> · work in progress · updated 25 November 2026</p>
+<h1>Can one linear direction both detect reward hacking and steer a model away from it?</h1>
+<p class="byline">Niranjan Deshpande</p>
+<div class="tldr">
+<p class="tldr-head">TL;DR</p>
+<ul>
+<li>We fit a logistic probe for reward hacking on the residual stream of a frozen Qwen3.8-27B, using its own hack and honest completions in 11 single-turn environments. We steer with the probe multiplied by the activation covariance, which we write as <code>Σ·probe</code>. We compare both against our reconstruction of Goodfire's reward-hacking direction.</li>
+<li><b>Single-turn detection.</b> On environments the probe was not fitted on, it separates hack from honest completions with AUROC 0.89, against 0.47 for Goodfire's direction (difference +0.42, 95% CI [+0.38, +0.45]).</li>
+<li><b>Single-turn steering.</b> Subtracting <code>Σ·probe</code> lowers the hack rate on 50 fresh prompts from 48% by 44 points [−58, −32]. None of 32 random vectors does as much. Subtracting Goodfire's direction changes it by +6 [−10, +22].</li>
+<li><b>Multi-turn steering.</b> In two agent task families where the unsteered model hacks in 29 of 32 episodes, subtracting <code>Σ·probe</code> gives 0 of 32. The steered model still does the task honestly and reports that the target cannot be reached. Controls for this result are running.</li>
+<li><b>What did not hold up.</b> As a detector on multi-turn rollouts the probe ties Goodfire's direction (−0.01 [−0.12, +0.09]) and is inverted on two of six task families. So the direction steers agents better than it flags them.</li>
+<li><b>Running now.</b> Random-vector controls, benign task variants, three more task families, capability benchmarks, a prompt-only baseline, and a test of whether the direction also affects lying in short stories.</li>
+</ul>
+</div>
+<details class="toc-mobile"><summary>Contents</summary>
+<nav class="toc" aria-label="Contents"><div class="toc-head">Contents</div><ul>
+<li><a href="#top" data-target="top">Summary</a></li>
+<li><a href="#why" data-target="why">Why this matters</a></li>
+<li><a href="#method" data-target="method">Method</a></li>
+<li><a href="#part-a" data-target="part-a">Single-turn environments</a><ul>
+<li><a href="#r1" data-target="r1">1. Detection</a></li>
+<li><a href="#r2" data-target="r2">2. Steering</a></li>
+</ul></li>
+<li><a href="#part-b" data-target="part-b">Multi-turn agent rollouts</a><ul>
+<li><a href="#r3" data-target="r3">3. Detection</a></li>
+<li><a href="#r4" data-target="r4">4. Steering inside rollouts</a></li>
+<li><a href="#r5" data-target="r5">5. Running now</a></li>
+</ul></li>
+<li><a href="#where" data-target="where">Where this stands</a></li>
+</ul></nav>
+</details>
+</header>
+
+<h2 id="why">Why this matters</h2>
+<p>Reward hacking means passing a check without doing the task: editing a test, reading a leaked answer, changing a threshold. If a single direction in a model's activations tracks this, it gives a cheap monitor (read the projection) and a cheap intervention (subtract the direction). Goodfire published such a direction (arXiv 2609.19101). We want to know whether a simple probe trained on the model's own behaviour does better, and whether it carries over from short completions to long agent episodes.</p>
+<p>The steering result matters most for the second question. A direction that only works in the environments it was fitted on is a description of those environments. A direction fitted on one-shot completions that also removes hacking in multi-turn tool-use episodes it has never seen is closer to a representation of the behaviour.</p>
+
+<h2 id="method">Method</h2>
+<p>We collect completions from the frozen model in single-turn environments where hacking is possible but not requested, and a judge labels each as hack or honest. We read the residual stream at the input of block 36, average it over the completion's tokens, and fit a logistic probe <code>w</code> to separate hack from honest completions. For steering we do not use <code>w</code> directly. We use <code>Σw</code>, where <code>Σ</code> is the covariance of activations at that layer, scaled to a fixed norm and added to or subtracted from the residual stream at every position.</p>
+<details class="more"><summary>Method details — Data and labels</summary>
+<ul>
+<li>Model: Qwen3.8-27B with thinking on, never fine-tuned.</li>
+<li>11 single-turn environments, each a prompt with a legitimate route and a shortcut (for example a leaked answer key, a save file that can be edited, a threshold file next to a benchmark). The prompts never ask for the shortcut.</li>
+<li>Several completions are sampled per prompt. A judge model (one pass per completion) labels each as hack or honest. Only prompts with both outcomes are used, so that the probe compares hack and honest behaviour on the same prompt.</li>
+</ul>
+</details>
+<details class="more"><summary>Method details — Probe and steering vector</summary>
+<ul>
+<li>The probe is an L2-regularised logistic regression on standardised, mean-pooled activations at the input of block 36.</li>
+<li>Why <code>Σ·probe</code>: a probe reads along <code>w</code>, but the cheapest way to change that reading, measured in the model's own activation statistics, is to move along <code>Σw</code>. For a whitened mean-difference probe, <code>Σw</code> is exactly the plain difference of class means.</li>
+<li>The steering vector is <code>20·Σw/‖Σw‖</code>. Norm 20 is 24% of the mean residual norm. It is applied at every position of the request (prompt and generated tokens), inside a patched vLLM server that selects the vector per request.</li>
+</ul>
+</details>
+<details class="more"><summary>Method details — Scores and comparisons</summary>
+<ul>
+<li><b>Matched AUROC.</b> For each prompt, hack completions are ranked against honest completions of the same prompt, and the result is averaged over prompts and then environments. A direction cannot score by recognising the prompt.</li>
+<li><b>Leave one environment out.</b> For single-turn detection the probe is fitted on ten environments and scored on the eleventh.</li>
+<li><b>Goodfire's direction.</b> We rebuilt it on this model from their released data by their recipe. One of their data families is not released and their pooling is not stated, so this is a reconstruction.</li>
+<li><b>Random steering controls.</b> 32 conditions at the same norm: 16 isotropic and 16 drawn with covariance <code>Σ</code>, half added and half subtracted.</li>
+<li>Intervals are 95% bootstrap intervals over prompts or tasks.</li>
+</ul>
+</details>
+
+<p class="part" id="part-a">Single-turn environments</p>
+<h2 id="r1">1. Detection: the probe beats Goodfire's direction</h2>
+<p>We asked whether each direction separates hack from honest completions in an environment it has not seen. The probe has mean matched AUROC 0.887 and Goodfire's direction has 0.471, a paired difference of +0.417 [+0.383, +0.450].</p>
+<figure>
+<div class="fig-panel"><div class="fig-top"><span class="fig-title">Matched AUROC by held-out environment</span>
+<span class="legend"><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#235fa6"/></svg>logistic probe</span><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#b0702a"/></svg>Goodfire's direction</span></span></div>
+<div class="chart" id="c-det"></div></div>
+<figcaption>One pair of dots per environment (10 to 78 prompts each). The probe is fitted on the other ten environments. The dashed line is chance.</figcaption>
+</figure>
+<ul class="tight">
+<li>Goodfire's direction is not random here. It is well below 0.5 on six environments, which means it ranks hack completions lower than honest ones there. A detector whose sign depends on the environment cannot be used as a flag.</li>
+<li>Their direction was built for tool calls in agent transcripts, so this is not its home setting. Section 3 has the comparison on rollouts.</li>
+</ul>
+
+<h2 id="r2">2. Steering: subtracting <code>Σ·probe</code> removes most hacking</h2>
+<p>We took five environments outside every fit, ten fresh prompts each, and generated one completion per prompt under each steering condition. Unsteered, the model hacks on 48% of the 50 prompts.</p>
+<figure>
+<div class="fig-panel"><div class="fig-top"><span class="fig-title">Change in hack rate when a direction is subtracted (50 fresh prompts)</span>
+<span class="legend"><span><i class="band"></i>range of 32 random vectors</span></span></div>
+<div class="chart" id="c-steer"></div></div>
+<figcaption>Points are the change in hack rate against unsteered, in percentage points, with 95% intervals. The shaded band is the full range of the 32 random conditions (−34 to +30).</figcaption>
+</figure>
+<ul class="tight">
+<li>Subtracting <code>Σ·probe</code> lowers hacking by 44 points [−58, −32]. No random condition is as low (p = 0.024 after Holm correction over the three directions named in advance).</li>
+<li>Subtracting Goodfire's direction changes hacking by +6 [−10, +22]. Head to head, ours is 50 points lower [−64, −36].</li>
+<li><code>Σ·probe</code> moves hacking in both directions: adding it raises hacking by 22 points [+2, +40]. A vector that only disrupted the model would lower hacking with either sign.</li>
+<li>The raw probe <code>w</code>, subtracted at the same norm, does much less (−12 [−30, +4]). The covariance transform is what makes the probe usable for steering.</li>
+</ul>
+<p><b>Caveats.</b> Random vectors drawn with covariance <code>Σ</code> lower hacking by about 13 points on average with either sign, so some of the effect is generic. One sample per prompt means per-environment numbers move in steps of 10 points. With the direction subtracted, 78% of answers were complete, against 84% unsteered. The incomplete ones were cut off by the token limit in one environment.</p>
+
+<p class="part" id="part-b">Multi-turn agent rollouts</p>
+<h2 id="r3">3. Detection: a tie with Goodfire's direction</h2>
+<p>We built six families of multi-turn tasks in which the model works in a sandbox with tools for about ten turns. Unprompted, it hacks often: it edits a save file or a benchmark gate in almost every episode of two families, and reads a leaked file in 39% of episodes of a third. We then asked whether the probe, fitted only on single-turn completions, flags the hack episodes. The score is the mean activation over an episode's assistant tokens, hack episodes against honest episodes of the same task.</p>
+<figure>
+<div class="fig-panel"><div class="fig-top"><span class="fig-title">Episode-level matched AUROC on rollouts</span>
+<span class="legend"><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#235fa6"/></svg>logistic probe</span><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#b0702a"/></svg>Goodfire's direction</span></span></div>
+<div class="chart" id="c-roll"></div></div>
+<figcaption>One pair of dots per task family, with 95% intervals over tasks (3 to 13 tasks with both outcomes). A sixth family with a single hack episode is left out of the chart. The dashed line is chance.</figcaption>
+</figure>
+<ul class="tight">
+<li>Over the six families the paired difference is −0.010 [−0.115, +0.085]. By the rule we fixed before the run, the probe does not beat Goodfire's direction on rollouts.</li>
+<li>Each direction is inverted somewhere: ours on release gate and answer key, theirs on leaked outputs. Neither is a usable flag across families.</li>
+<li>Post hoc, the probe does find the step where the hack happens (step-level AUROC 0.78 to 0.98 in five families). We found this after looking at the data, so it is a hypothesis.</li>
+</ul>
+
+<h2 id="r4">4. Steering inside rollouts: hacking goes from 29 of 32 episodes to 0</h2>
+<p>This is today's result. We took the two families where the unsteered model hacks almost every time, and reran the same 32 episodes (8 tasks, 2 seeds, 2 families) with a direction subtracted at every turn. In these task variants the honest route fails by design, so an honest agent has to submit a result that misses the target.</p>
+<figure>
+<div class="fig-panel"><div class="fig-top"><span class="fig-title">Episodes with a hack, by condition</span>
+<span class="legend"><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#8a7d6d"/></svg>unsteered</span><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#235fa6"/></svg><code>Σ·probe</code> subtracted</span><span><svg class="mk"><circle cx="6" cy="6" r="5" fill="#b0702a"/></svg>Goodfire's subtracted (partial)</span></span></div>
+<div class="chart" id="c-mt"></div></div>
+<figcaption>Bars are the share of episodes in which a programmatic check found a hack (an edited save file, or a changed or bypassed gate). 16 episodes per bar for unsteered and <code>Σ·probe</code>. The Goodfire run was not finished when this page was written: 13 and 14 episodes.</figcaption>
+</figure>
+<ul class="tight">
+<li><b>Unsteered:</b> 14 of 16 episodes hack in save game and 15 of 16 in release gate.</li>
+<li><b><code>Σ·probe</code> subtracted:</b> 0 of 16 and 0 of 16. With 0 of 32, the 95% upper bound on the steered hack rate is about 11%.</li>
+<li><b>The steered episodes are coherent.</b> In save game the model plays the trading game, works out the maximum reachable gold, and submits it with a statement that the target is out of reach. In release gate it batches the datastore reads, shows that the remaining latency is a floor, and declines in words to touch the threshold or the simulator. We checked all 32 transcripts for edits the detector might miss and found none (this check was written after seeing the result).</li>
+<li><b>Goodfire's direction subtracted:</b> 2 hacks in 27 finished episodes, but 23 of those 27 ended by running out of context or of a token budget without submitting. So its low hack rate mostly reflects the model no longer finishing, which is a different outcome from choosing the honest route.</li>
+</ul>
+<p><b>Caveats.</b> The unsteered episodes come from a run the night before on an unpatched server. There is no random-vector control in rollouts yet, and section 2 shows that such vectors can lower hacking by themselves. Two task families and one seed set per task are a narrow base. All of these are being addressed by the runs in section 5.</p>
+
+<h2 id="r5">5. Running now</h2>
+<p>These runs were in progress when this page was written, and their results are not reported here.</p>
+<ul class="tight">
+<li><b>Random-vector controls in rollouts.</b> Two vectors drawn with covariance <code>Σ</code> and nearly orthogonal to <code>Σ·probe</code>, and one isotropic vector, subtracted at the same norm on the same 32 episodes. If the effect is specific, these should leave hacking near 90%.</li>
+<li><b>Unsteered episodes on the same patched server</b>, to rule out a server difference.</li>
+<li><b>Benign task variants under steering.</b> The same tasks in solvable form, to see whether the steered model still completes them.</li>
+<li><b>Three more task families</b> (answer key, leaked outputs, scorer copy). Only leaked outputs has a high enough unsteered hack rate (25 of 64) to show a clear drop.</li>
+<li><b>Capability benchmarks</b> with and without the direction: MATH level 5, MMLU and HumanEval, same questions and seeds.</li>
+<li><b>A prompt-only baseline:</b> three sentences in the system prompt telling the model to use only legitimate means.</li>
+<li><b>Lying in short stories.</b> Following arXiv 2610.29129, stories in which a character is asked a question where the truth is costly, written with the direction added and subtracted. This tests whether the direction is about reward hacking or about dishonesty more broadly.</li>
+</ul>
+<p>All new rollout runs stop an episode after 30,000 generated tokens, and the analysis will apply the same rule to every condition.</p>
+
+<h2 id="where">Where this stands</h2>
+<ul>
+<li>As a steering vector, <code>Σ·probe</code> beats Goodfire's direction in single-turn environments with intervals that exclude zero, and in the first multi-turn test it removes hacking completely while the agent keeps working. The multi-turn result still needs its controls.</li>
+<li>As a detector, the probe wins clearly on single-turn completions and does not win on rollouts. Fitting or selecting on rollout data is the obvious next thing to try for detection.</li>
+<li>If the capability benchmarks show a loss, the next step is to subtract only when the probe reading is high (the capping idea from arXiv 2610.29129), which here would mean the smallest covariance-weighted edit that caps the probe.</li>
+<li>Everything is on one model, one layer and one norm, and the multi-turn task families are ones we wrote.</li>
+</ul>
+
+<p class="footer">Record of the numbers: <code>rlp/flag/results/07_overnight.md</code> in the <a href="https://github.com/niranjan-deshpande/rh-probe-steering">repository</a> (private). Steered rollouts: <code>results/mt/v3_sprobe_sub/</code>. Method notes: <code>rlp/flag/METHOD.md</code>.</p>
+</main>
+</div>
+<script>
+(function(){
+if (!window.Plotly) { document.querySelectorAll('.chart').forEach(e=>e.innerHTML='<div class="chart-fallback">Chart library failed to load.</div>'); return; }
+const AI='#235fa6', HU='#b0702a', GR='#8a7d6d', INK='#2a2318';
+const font={family:'"Source Sans 3", Helvetica, Arial, sans-serif', size:13, color:INK};
+const cfg={displayModeBar:false, responsive:true};
+const ax=(t,o)=>Object.assign({title:{text:t,standoff:8}, gridcolor:'#e6ddd0', zeroline:false, linecolor:'#cfc4b4', fixedrange:true},o||{});
+const L=(o)=>Object.assign({font, paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', margin:{l:60,r:16,t:10,b:50}, height:320, showlegend:false, hovermode:'closest'},o);
+const chance=(o)=>Object.assign({type:'line', line:{color:GR,width:1,dash:'dash'}},o);
+
+// 1. single-turn detection (07_overnight.md section 1)
+const E=[['thresh_tamper',0.974,0.194],['leak',0.967,0.837],['ckpt_swap',0.956,0.996],['fake_cite',0.950,0.063],['length_pad',0.935,0.275],['save_tamper',0.928,0.650],['ref_copy',0.927,0.210],['hardcode',0.872,0.220],['fake_pass',0.850,0.835],['quiz_key',0.761,0.290],['log_scrub',0.643,0.610]].reverse();
+Plotly.newPlot('c-det', [
+  {x:E.flatMap(d=>[d[1],d[2],null]), y:E.flatMap(d=>[d[0],d[0],null]), mode:'lines', line:{color:'#cfc4b4',width:1.5}, hoverinfo:'skip'},
+  {x:E.map(d=>d[2]), y:E.map(d=>d[0]), mode:'markers', marker:{size:10,color:HU,line:{width:1,color:'#fff'}}, hovertemplate:"%{y}: Goodfire's %{x:.2f}<extra></extra>"},
+  {x:E.map(d=>d[1]), y:E.map(d=>d[0]), mode:'markers', marker:{size:10,color:AI,line:{width:1,color:'#fff'}}, hovertemplate:'%{y}: probe %{x:.2f}<extra></extra>'}],
+  L({height:360, margin:{l:104,r:16,t:10,b:46}, xaxis:ax('matched AUROC',{range:[0,1.03]}), yaxis:ax('',{gridcolor:'rgba(0,0,0,0)'}), shapes:[chance({x0:0.5,x1:0.5,y0:-0.6,y1:10.6})]}), cfg);
+
+// 2. steering by subtraction (section 2)
+const S=[["Goodfire's direction",6,-10,22,HU],['logistic probe w',-12,-30,4,GR],['mean difference',-26,-40,-12,GR],['Σ·probe',-44,-58,-32,AI]];
+Plotly.newPlot('c-steer', [{x:S.map(d=>d[1]), y:S.map(d=>d[0]), mode:'markers', marker:{size:11,color:S.map(d=>d[4]),line:{width:1,color:'#fff'}},
+  error_x:{type:'data',symmetric:false,array:S.map(d=>d[3]-d[1]),arrayminus:S.map(d=>d[1]-d[2]),color:'#5e5245',thickness:1.5,width:4},
+  hovertemplate:'%{y}: %{x} points<extra></extra>'}],
+  L({height:250, margin:{l:140,r:16,t:10,b:46}, xaxis:ax('change in hack rate (percentage points)',{range:[-65,35]}), yaxis:ax('',{gridcolor:'rgba(0,0,0,0)'}),
+     shapes:[{type:'rect',x0:-34,x1:30,y0:-0.6,y1:3.6,fillcolor:'rgba(138,125,109,0.16)',line:{width:0},layer:'below'}, chance({x0:0,x1:0,y0:-0.6,y1:3.6})]}), cfg);
+
+// 3. rollout detection (section 7): family, probe, lo, hi, gf, lo, hi
+const R=[['Save game',0.919,0.819,1.0,0.772,0.637,0.891],['ImpossibleBench',0.700,0.570,0.831,0.675,0.465,0.863],['Leaked outputs',0.694,0.350,0.938,0.212,0.053,0.384],['Release gate',0.312,0.141,0.516,0.850,0.719,0.969],['Answer key',0.302,0.0,0.542,0.677,0.538,0.917]].reverse();
+const tr=(i,c,name,off)=>({x:R.map(d=>d[i]), y:R.map((d,k)=>k+off), mode:'markers', marker:{size:10,color:c,line:{width:1,color:'#fff'}},
+  error_x:{type:'data',symmetric:false,array:R.map(d=>d[i+2]-d[i]),arrayminus:R.map(d=>d[i]-d[i+1]),color:c,thickness:1.5,width:3},
+  text:R.map(d=>d[0]), hovertemplate:'%{text}: '+name+' %{x:.2f}<extra></extra>'});
+Plotly.newPlot('c-roll', [tr(4,HU,"Goodfire's",-0.13), tr(1,AI,'probe',0.13)],
+  L({height:300, margin:{l:118,r:16,t:10,b:46}, xaxis:ax('episode-level matched AUROC',{range:[-0.03,1.03]}),
+     yaxis:ax('',{gridcolor:'rgba(0,0,0,0)',tickmode:'array',tickvals:R.map((d,k)=>k),ticktext:R.map(d=>d[0]),range:[-0.6,4.6]}), shapes:[chance({x0:0.5,x1:0.5,y0:-0.6,y1:4.6})]}), cfg);
+
+// 4. steering inside rollouts (m1 unsteered; v3_sprobe_sub; v3_gf_sub partial)
+const F=['Save game','Release gate'];
+const B=[['unsteered',GR,[14,15],[16,16]],['Σ·probe subtracted',AI,[0,0],[16,16]],["Goodfire's subtracted (partial)",HU,[1,1],[13,14]]];
+Plotly.newPlot('c-mt', B.map(b=>({type:'bar', name:b[0], x:F, y:b[2].map((h,i)=>100*h/b[3][i]), marker:{color:b[1]},
+  text:b[2].map((h,i)=>h+' of '+b[3][i]), textposition:'outside', cliponaxis:false, hovertemplate:b[0]+', %{x}: %{text}<extra></extra>'})),
+  L({height:320, barmode:'group', bargap:0.3, bargroupgap:0.08, margin:{l:60,r:16,t:24,b:40}, xaxis:ax('',{gridcolor:'rgba(0,0,0,0)'}), yaxis:ax('episodes with a hack (%)',{range:[0,108]})}), cfg);
+})();
+
+// Contents: highlight the section being read (and its group) in the sidebar and the mobile box.
+(function(){
+const links=[...document.querySelectorAll('.toc a[data-target]')];
+const els=[...new Set(links.map(a=>a.dataset.target))].map(id=>document.getElementById(id)).filter(Boolean);
+const parentOf={}; document.querySelectorAll('.page > .toc > ul > li').forEach(li=>{const p=li.querySelector(':scope > a').dataset.target; li.querySelectorAll('ul a').forEach(a=>parentOf[a.dataset.target]=p);});
+function update(){ const y=window.scrollY+120; let cur=els[0]&&els[0].id;
+  for(const e of els){ if(e.getBoundingClientRect().top+window.scrollY<=y) cur=e.id; }
+  links.forEach(a=>a.classList.toggle('active', a.dataset.target===cur || a.dataset.target===parentOf[cur])); }
+let raf=0; window.addEventListener('scroll',()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0; update();}); },{passive:true});
+update();
+})();
+</script>
+</body>
+</html>
